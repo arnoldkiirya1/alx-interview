@@ -1,50 +1,33 @@
 #!/usr/bin/python3
-"""
-log parsing
-"""
-
 import sys
-import re
+import signal
 
+def print_stats(total_size, status_codes):
+    print("File size: {}".format(total_size))
+    for code in sorted(status_codes):
+        print("{}: {}".format(code, status_codes[code]))
 
-def output(log: dict) -> None:
-    """
-    helper function to display stats
-    """
-    print("File size: {}".format(log["file_size"]))
-    for code in sorted(log["code_frequency"]):
-        if log["code_frequency"][code]:
-            print("{}: {}".format(code, log["code_frequency"][code]))
+def signal_handler(sig, frame):
+    print_stats(total_size, status_codes)
+    sys.exit(0)
 
+signal.signal(signal.SIGINT, signal_handler)
 
-if __name__ == "__main__":
-    regex = re.compile(
-    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d+\] "GET /projects/260 HTTP/1.1" (.{3}) (\d+)')  # nopep8
+total_size = 0
+status_codes = {}
 
-    line_count = 0
-    log = {}
-    log["file_size"] = 0
-    log["code_frequency"] = {
-        str(code): 0 for code in [
-            200, 301, 400, 401, 403, 404, 405, 500]}
+try:
+    for idx, line in enumerate(sys.stdin, 1):
+        parts = line.split()
+        if len(parts) >= 7:
+            ip, date, request, status, size = parts[0], parts[3][1:], parts[5], int(parts[6]), int(parts[7])
+            if request == '"GET /projects/260 HTTP/1.1"':
+                total_size += size
+                if status in [200, 301, 400, 401, 403, 404, 405, 500]:
+                    status_codes[status] = status_codes.get(status, 0) + 1
+        if idx % 10 == 0:
+            print_stats(total_size, status_codes)
 
-    try:
-        for line in sys.stdin:
-            line = line.strip()
-            match = regex.fullmatch(line)
-            if (match):
-                line_count += 1
-                code = match.group(1)
-                file_size = int(match.group(2))
-
-                # File size
-                log["file_size"] += file_size
-
-                # status code
-                if (code.isdecimal()):
-                    log["code_frequency"][code] += 1
-
-                if (line_count % 10 == 0):
-                    output(log)
-    finally:
-        output(log)
+except KeyboardInterrupt:
+    print_stats(total_size, status_codes)
+    sys.exit(0)
